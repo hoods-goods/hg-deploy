@@ -111,6 +111,21 @@ final class BuilderKitTests: XCTestCase {
         XCTAssertNil(fixed["chunklistid"])
     }
 
+    func testRemoveIfEmptyKeepsOtherDownloads() throws {
+        let fm = FileManager.default
+        let staging = fm.temporaryDirectory.appendingPathComponent("hgd-staging-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: staging) }
+        let other = staging.appendingPathComponent("140-88558")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        try Data("pkg".utf8).write(to: other.appendingPathComponent("InstallAssistant.pkg"))
+        Assembler.removeIfEmpty(staging)
+        XCTAssertTrue(fm.fileExists(atPath: other.appendingPathComponent("InstallAssistant.pkg").path))
+        try fm.removeItem(at: other)
+        try Data().write(to: staging.appendingPathComponent(".DS_Store"))
+        Assembler.removeIfEmpty(staging)
+        XCTAssertFalse(fm.fileExists(atPath: staging.path))
+    }
+
     func testShellQuote() {
         XCTAssertEqual(Shell.quote("it's"), #"'it'\''s'"#)
     }

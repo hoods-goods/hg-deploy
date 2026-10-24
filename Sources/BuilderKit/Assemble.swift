@@ -70,7 +70,7 @@ public enum Assembler {
         try FileManager.default.moveItem(at: app, to: final)
         for old in replacing where old.path != final.path { try? FileManager.default.removeItem(at: old) }
         try? FileManager.default.removeItem(at: staging)
-        try? FileManager.default.removeItem(at: layout.stagingDir)   // only when empty
+        removeIfEmpty(layout.stagingDir)
         return final
     }
 
@@ -95,8 +95,17 @@ public enum Assembler {
         try FileManager.default.createDirectory(at: layout.installersDir, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: final.path) { try FileManager.default.removeItem(at: final) }
         try FileManager.default.moveItem(at: app, to: final)
-        try? FileManager.default.removeItem(at: layout.stagingDir)
+        removeIfEmpty(layout.stagingDir)
         return final
+    }
+
+    /// Deletes a folder only when nothing (but Finder litter) is in it. FileManager's
+    /// removeItem deletes contents too, which once wiped other queued downloads.
+    public static func removeIfEmpty(_ dir: URL) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(atPath: dir.path) else { return }
+        guard items.allSatisfy({ $0 == ".DS_Store" }) else { return }
+        try? fm.removeItem(at: dir)
     }
 
     /// `pkgutil --expand-full` the package and return the Install macOS app inside its payload.

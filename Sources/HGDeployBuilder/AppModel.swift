@@ -178,7 +178,7 @@ final class AppModel: ObservableObject {
                 _ = await Shell.runAsAdmin(script: "rm -rf \(Shell.quote(dir.path))", prompt: "HG Deploy Builder needs to delete an unfinished download.")
             }
         }
-        try? FileManager.default.removeItem(at: layout.stagingDir)   // only succeeds when empty
+        Assembler.removeIfEmpty(layout.stagingDir)
         say("Discarded unfinished downloads")
         unfinished = []
         driveFree = Disks.freeSpace(at: layout.root)

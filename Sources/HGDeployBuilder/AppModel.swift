@@ -45,6 +45,15 @@ final class AppModel: ObservableObject {
            let c = try? JSONDecoder().decode(DeployConfig.self, from: d) {
             config = c
         }
+    }
+
+    private var started = false
+
+    /// Called once someone has signed in. The model lives as long as the app,
+    /// so closing and reopening the window keeps downloads and state.
+    func start() {
+        guard !started else { return }
+        started = true
         Task {
             await refreshDisks()
             await loadCatalog()

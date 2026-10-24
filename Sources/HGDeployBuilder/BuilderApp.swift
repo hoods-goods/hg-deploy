@@ -4,19 +4,22 @@ import SwiftUI
 struct BuilderApp: App {
     @StateObject private var auth = Auth()
     @StateObject private var updater = Updater()
+    @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("HG Deploy Builder") {
+        // A single Window (not a WindowGroup): clicking the Dock icon or
+        // Window ▸ HG Deploy Builder reopens it after it's closed.
+        Window("HG Deploy Builder", id: "main") {
             RootView()
                 .environmentObject(auth)
                 .environmentObject(updater)
+                .environmentObject(model)
                 .frame(minWidth: 880, minHeight: 600)
                 .task { await updater.checkInBackgroundIfDue() }
                 .sheet(isPresented: $updater.showSheet) { UpdateView().environmentObject(updater) }
         }
         .windowResizability(.contentMinSize)
         .commands {
-            CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { Task { await updater.check(userInitiated: true) } }
                 if auth.user != nil {
@@ -43,9 +46,9 @@ struct RootView: View {
 }
 
 struct SignedInView: View {
-    @StateObject private var model = AppModel()
+    @EnvironmentObject var model: AppModel
     var body: some View {
-        ContentView().environmentObject(model)
+        ContentView().task { model.start() }
     }
 }
 

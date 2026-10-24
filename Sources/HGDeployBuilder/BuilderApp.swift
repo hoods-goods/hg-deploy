@@ -16,7 +16,7 @@ struct BuilderApp: App {
                 .environmentObject(model)
                 .frame(minWidth: 880, minHeight: 600)
                 .task { await updater.checkInBackgroundIfDue() }
-                .sheet(isPresented: $updater.showSheet) { UpdateView().environmentObject(updater) }
+                .sheet(isPresented: $updater.showSheet) { UpdateView().environmentObject(updater).environmentObject(model) }
         }
         .windowResizability(.contentMinSize)
         .commands {

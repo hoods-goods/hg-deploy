@@ -179,6 +179,7 @@ final class Updater: ObservableObject {
 
 struct UpdateView: View {
     @EnvironmentObject var updater: Updater
+    @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -199,6 +200,10 @@ struct UpdateView: View {
                     .frame(maxHeight: 200)
                     .padding(8)
                     .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                }
+                if model.isBusy {
+                    Label("Installers are downloading or being built. Finish or cancel that first; updating now would stop it.",
+                          systemImage: "hourglass").font(.caption).foregroundStyle(.orange)
                 }
                 if updater.teamID == nil {
                     Text("This copy isn't signed with a Developer ID, so it can't install updates itself. Download the installer from the release page.")
@@ -221,6 +226,7 @@ struct UpdateView: View {
                     Button("Install and Relaunch") { Task { await updater.install(r) } }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
+                        .disabled(model.isBusy)
                 }
                 if case .failed = updater.phase {
                     Button("Try Again") { Task { await updater.check(userInitiated: true) } }

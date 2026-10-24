@@ -143,6 +143,14 @@ public struct DriveLayout: Sendable {
         echo "This is an Apple silicon Mac. HG Deploy is for Intel Macs."
         exit 1
     fi
+    # HG Deploy needs Recovery from macOS 10.11 or later.
+    osv=$(/usr/bin/sw_vers -productVersion 2>/dev/null)
+    major=${osv%%.*}; rest=${osv#*.}; minor=${rest%%.*}
+    if [ "$major" = "10" ] && [ -n "$minor" ] && [ "$minor" -lt 11 ] 2>/dev/null; then
+        echo "This Recovery is macOS $osv, which is too old for HG Deploy."
+        echo "Restart holding Option-Command-R (Internet Recovery) and run this again."
+        exit 1
+    fi
     APP="$dir/HGDeploy/HG Deploy.app/Contents/MacOS/HG Deploy"
     if [ ! -x "$APP" ]; then
         echo "HG Deploy isn't on this drive ($APP missing). Rebuild it with HG Deploy Builder."

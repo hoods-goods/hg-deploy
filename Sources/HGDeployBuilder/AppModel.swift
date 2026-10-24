@@ -22,6 +22,18 @@ final class AppModel: ObservableObject {
     @Published var catalogLoading = false
     @Published var catalogError: String?
     @Published var queue: [CatalogInstaller] = []
+    /// Downloads left in the drive's staging folder by an update, crash or unplugged drive.
+    @Published var unfinished: [Unfinished] = []
+
+    struct Unfinished: Identifiable, Equatable {
+        let id: String              // product ID = staging folder name
+        let product: CatalogInstaller?
+        let downloaded: Int64
+        var title: String { product?.title ?? "Unknown installer (\(id))" }
+    }
+
+    /// True while something is downloading or installing (updates wait for it).
+    var isBusy: Bool { job != nil || !queue.isEmpty || queueTask != nil }
 
     // Defaults written to the drive
     @Published var config = DeployConfig()
@@ -133,6 +145,43 @@ final class AppModel: ObservableObject {
         }
         let manifest = Manifest(installers: entries)
         if manifest != old { try? layout.save(manifest) }
+        scanUnfinished()
+    }
+
+    /// Finds staging folders that aren't part of the current queue.
+    func scanUnfinished() {
+        guard let layout, layout.isDeployDrive else { unfinished = []; return }
+        let fm = FileManager.default
+        let dirs = (try? fm.contentsOfDirectory(at: layout.stagingDir, includingPropertiesForKeys: nil)) ?? []
+        let active = Set(queue.map(\.id))
+        unfinished = dirs.compactMap { dir in
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+            let id = dir.lastPathComponent
+            guard !active.contains(id), queueTask == nil else { return nil }
+            let size = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? [])
+                .reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+            return Unfinished(id: id, product: catalog.first { $0.id == id }, downloaded: size)
+        }
+    }
+
+    func resumeUnfinished() {
+        for u in unfinished { if let p = u.product { enqueue(p) } }
+        unfinished.removeAll { $0.product != nil }
+    }
+
+    func discardUnfinished() async {
+        guard let layout else { return }
+        for u in unfinished {
+            let dir = layout.stagingDir.appendingPathComponent(u.id)
+            do { try FileManager.default.removeItem(at: dir) } catch {
+                _ = await Shell.runAsAdmin(script: "rm -rf \(Shell.quote(dir.path))", prompt: "HG Deploy Builder needs to delete an unfinished download.")
+            }
+        }
+        try? FileManager.default.removeItem(at: layout.stagingDir)   // only succeeds when empty
+        say("Discarded unfinished downloads")
+        unfinished = []
+        driveFree = Disks.freeSpace(at: layout.root)
     }
 
     /// Erases the selected disk and makes it an HG Deploy drive.
@@ -245,6 +294,7 @@ final class AppModel: ObservableObject {
         do {
             catalog = try await Catalog.fetch()
             say("Apple catalog: \(catalog.count) Intel installers")
+            scanUnfinished()
         } catch {
             catalogError = error.localizedDescription
             say("Catalog failed: \(error.localizedDescription)")

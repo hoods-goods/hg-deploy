@@ -15,6 +15,7 @@ struct InstallersView: View {
                 if !model.isDeployDrive {
                     Label("Set the drive up on the Drive tab first.", systemImage: "info.circle").foregroundStyle(.secondary)
                 }
+                if !model.unfinished.isEmpty && model.queue.isEmpty && model.job == nil { unfinishedBanner }
                 onDrive
                 fromApple
             }
@@ -30,6 +31,30 @@ struct InstallersView: View {
                 removing = nil
             }
         } message: { Text("It's deleted from the drive.") }
+    }
+
+    private var unfinishedBanner: some View {
+        GroupBox {
+            HStack(alignment: .top) {
+                Image(systemName: "arrow.clockwise.circle.fill").foregroundStyle(.orange).font(.title2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Unfinished downloads").font(.headline)
+                    ForEach(model.unfinished) { u in
+                        Text("\(u.title) — \(formatBytes(u.downloaded)) downloaded").font(.callout)
+                    }
+                    Text("Left over from an update, a quit, or an unplugged drive. Resuming picks up where it stopped.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack {
+                    Button("Resume") { model.resumeUnfinished() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!model.unfinished.contains { $0.product != nil })
+                    Button("Discard") { Task { await model.discardUnfinished() } }
+                }
+            }
+            .padding(6)
+        }
     }
 
     private var header: some View {

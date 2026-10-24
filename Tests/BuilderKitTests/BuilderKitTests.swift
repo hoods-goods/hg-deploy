@@ -97,10 +97,22 @@ final class BuilderKitTests: XCTestCase {
             staged: [(p, URL(fileURLWithPath: "/Volumes/HG Deploy/.hgdeploy-staging/072-11111/072-11111.English.dist"),
                       [URL(fileURLWithPath: "/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.6-24G84.app")])],
             layout: layout)
-        XCTAssertTrue(s.contains("installer -pkg '/Volumes/HG Deploy/.hgdeploy-staging/072-11111/072-11111.English.dist'"))
+        XCTAssertTrue(s.contains("make_app '/Volumes/HG Deploy/.hgdeploy-staging/072-11111' 0"))
+        XCTAssertTrue(s.contains(#"installer -pkg "$st/InstallAssistant.pkg""#))
+        XCTAssertFalse(s.contains(".dist' -target"))
         XCTAssertTrue(s.contains("'/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.7.1-24G231.app'"))
         XCTAssertTrue(s.contains("rm -rf '/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.6-24G84.app'"))
         XCTAssertTrue(s.contains("INSTALLED 072-11111"))
+    }
+
+    func testInstallScriptLegacy() {
+        let layout = DriveLayout(root: URL(fileURLWithPath: "/Volumes/r"))
+        let p = CatalogInstaller(id: "041-22222", version: "10.15.7", build: "19H15", postDate: .distantPast,
+                                 distributionURL: URL(string: "https://example.com/041-22222.English.dist")!, packages: [])
+        let s = InstallerBuilder.installScript(
+            staged: [(p, URL(fileURLWithPath: "/Volumes/r/.hgdeploy-staging/041-22222/041-22222.English.dist"), [])], layout: layout)
+        XCTAssertTrue(s.contains("make_app '/Volumes/r/.hgdeploy-staging/041-22222' 1"))
+        XCTAssertTrue(s.contains(#"cp "$st/InstallESDDmg.pkg" "$ss/InstallESD.dmg""#))
     }
 
     func testShellQuote() {

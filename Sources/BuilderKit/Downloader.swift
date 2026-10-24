@@ -188,14 +188,14 @@ public enum InstallerBuilder {
         status=0
 
         """
+        s += Self.makeAppFunction
         for (product, dist, replacing) in staged {
             let final = layout.installersDir.appendingPathComponent(
                 InstallerInfo.driveName(major: product.major, version: product.version, build: product.build))
             let removeOld = replacing.filter { $0.path != final.path }.map { "rm -rf \(q($0.path))" }.joined(separator: "; ")
             s += """
             echo "== \(product.title)"
-            rm -rf "$DRIVE/Applications"/Install*.app
-            if /usr/sbin/installer -pkg \(q(dist.path)) -target "$DRIVE"; then
+            if make_app \(q(dist.deletingLastPathComponent().path)) \(product.major.hasPrefix("10.") ? "1" : "0"); then
                 app=$(ls -dt "$DRIVE/Applications"/Install*.app 2>/dev/null | head -1)
                 if [ -n "$app" ]; then
                     rm -rf \(q(final.path))
@@ -224,4 +224,42 @@ public enum InstallerBuilder {
         """
         return s
     }
+
+    /// make_app <staging dir> <legacy 0|1>: leaves "Install macOS ….app" in
+    /// $DRIVE/Applications. Big Sur and later: Apple's InstallAssistant.pkg.
+    /// High Sierra–Catalina: InstallAssistantAuto.pkg gives the app shell, and
+    /// the downloaded disk images go into its SharedSupport folder (how
+    /// Apple's catalog builds them; same as mist and installinstallmacos).
+    static let makeAppFunction = #"""
+    make_app() {
+        local st="$1" legacy="$2" app ss ii f
+        local pb=/usr/libexec/PlistBuddy
+        rm -rf "$DRIVE/Applications"/Install*.app
+        if [ "$legacy" = 0 ]; then
+            [ -f "$st/InstallAssistant.pkg" ] || { echo "InstallAssistant.pkg is missing from $st"; return 1; }
+            /usr/sbin/installer -pkg "$st/InstallAssistant.pkg" -target "$DRIVE" || return 1
+            return 0
+        fi
+        [ -f "$st/InstallAssistantAuto.pkg" ] || { echo "InstallAssistantAuto.pkg is missing from $st"; return 1; }
+        [ -f "$st/InstallESDDmg.pkg" ] || { echo "InstallESDDmg.pkg is missing from $st"; return 1; }
+        /usr/sbin/installer -pkg "$st/InstallAssistantAuto.pkg" -target "$DRIVE" || return 1
+        app=$(ls -dt "$DRIVE/Applications"/Install*.app 2>/dev/null | head -1)
+        [ -n "$app" ] || { echo "InstallAssistantAuto.pkg didn't create an app"; return 1; }
+        ss="$app/Contents/SharedSupport"
+        mkdir -p "$ss"
+        [ -f "$ss/InstallESD.dmg" ] || cp "$st/InstallESDDmg.pkg" "$ss/InstallESD.dmg" || return 1
+        for f in BaseSystem.dmg BaseSystem.chunklist AppleDiagnostics.dmg AppleDiagnostics.chunklist InstallInfo.plist; do
+            if [ -f "$st/$f" ] && [ ! -f "$ss/$f" ]; then cp "$st/$f" "$ss/$f" || return 1; fi
+        done
+        ii="$ss/InstallInfo.plist"
+        if [ -f "$ii" ]; then
+            "$pb" -c "Delete :Payload\ Image\ Info:chunklistURL" "$ii" 2>/dev/null
+            "$pb" -c "Delete :Payload\ Image\ Info:chunklistid" "$ii" 2>/dev/null
+            "$pb" -c "Set :Payload\ Image\ Info:URL InstallESD.dmg" "$ii"
+            "$pb" -c "Set :Payload\ Image\ Info:id com.apple.dmg.InstallESD" "$ii"
+        fi
+        return 0
+    }
+
+    """#
 }

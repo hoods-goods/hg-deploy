@@ -348,7 +348,7 @@ final class AppModel: ObservableObject {
 
     private func startQueue() {
         guard queueTask == nil else { return }
-        queueTask = Task { await runQueue(); queueTask = nil }
+        queueTask = Task { await runQueue(); queueTask = nil; scanUnfinished() }
     }
 
     /// Downloads everything queued (no password needed), then installs all of

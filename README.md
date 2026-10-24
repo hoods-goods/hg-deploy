@@ -17,7 +17,12 @@ Logs are written to the drive in `HGDeploy/Logs/<serial>_<date>.log`.
 
 ## Building drives — HG Deploy Builder
 
-The Builder (SwiftUI, macOS 14+) runs on any Mac:
+The Builder (SwiftUI, macOS 14+) runs on any Mac. It opens with an **HG SSO
+sign-in** (sso.hgcellular.com, app slug `hgdeploy`); only users granted HG
+Deploy in the SSO admin console get in, and a revoked or de-granted account is
+signed out within 30 minutes. It updates itself from the public
+[hoods-goods/hg-deploy-releases](https://github.com/hoods-goods/hg-deploy-releases)
+repo (the update must be signed by our Developer ID team and notarized).
 
 - **Drive**: erase an external SSD and set it up, or update HG Deploy on an existing drive.
 - **Installers**: download installers straight from Apple's software catalog
@@ -53,8 +58,21 @@ The Builder (SwiftUI, macOS 14+) runs on any Mac:
     Logs/
 ```
 
-## Building
+## Building and releasing
 
 `ci/build-app.sh` builds everything on a Mac with Xcode; GitHub Actions runs it
 on the hoods-goods Mac mini, then `ci/sign.sh` and `ci/notarize.sh` sign and
-notarize with the Developer ID secrets. Bump `VERSION` on main to publish a release.
+notarize. Bump `VERSION` on main to publish a release: the signed `.pkg` goes to
+the public `hoods-goods/hg-deploy-releases` repo (this code repo stays private)
+and this repo gets the matching `v<VERSION>` tag.
+
+Repo secrets: `MAC_CERTS_P12`, `MAC_CERTS_P12_2`, `MAC_CERTS_PASSWORD`,
+`NOTARY_KEY_P8`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` (Developer ID; copy them with
+refurb-station-app's *Copy signing secrets* workflow), `HGDEPLOY_SSO_SECRET` (the
+`hgdeploy` app secret from HG SSO, baked into the Builder's Info.plist at build
+time) and `RELEASES_TOKEN` (fine-grained token for hg-deploy-releases, Contents:
+Read and write). Releases are refused if any of them is missing.
+
+## License
+
+Proprietary. © Hoods Goods LLC, all rights reserved. See [LICENSE](LICENSE).

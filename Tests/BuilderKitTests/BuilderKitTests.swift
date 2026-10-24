@@ -100,4 +100,17 @@ final class BuilderKitTests: XCTestCase {
     func testShellQuote() {
         XCTAssertEqual(Shell.quote("it's"), #"'it'\''s'"#)
     }
+
+    func testSSOTokenExpiryAndConfig() {
+        // header.payload.signature with payload {"id":1,"exp":1760043200}
+        let payload = Data(#"{"id":1,"exp":1760043200}"#.utf8).base64EncodedString()
+            .replacingOccurrences(of: "=", with: "").replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+        let token = "eyJhbGciOiJIUzI1NiJ9.\(payload).sig"
+        XCTAssertEqual(SSOClient.expiry(ofToken: token), Date(timeIntervalSince1970: 1760043200))
+        XCTAssertNil(SSOClient.expiry(ofToken: "garbage"))
+        XCTAssertFalse(SSOClient(appSecret: nil).isConfigured)
+        XCTAssertFalse(SSOClient(appSecret: "").isConfigured)
+        XCTAssertTrue(SSOClient(appSecret: "abc").isConfigured)
+        XCTAssertTrue(SSOClient.friendly("User does not have access to this app", code: 403).contains("access to HG Deploy"))
+    }
 }

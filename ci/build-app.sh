@@ -64,6 +64,15 @@ BIN_DIR=$(swift build -c release "${ARCH_ARGS[@]}" --show-bin-path)
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/HGDeployBuilder" "$APP/Contents/MacOS/HGDeployBuilder"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
+# The HG SSO app secret comes from the HGDEPLOY_SSO_SECRET repo secret, never
+# from the source. Without it the Builder can't sign anyone in.
+if [ -n "${HGDEPLOY_SSO_SECRET:-}" ]; then
+  plutil -insert HGSSOAppSecret -string "$HGDEPLOY_SSO_SECRET" "$APP/Contents/Info.plist"
+  echo "sso=yes" >> "${GITHUB_OUTPUT:-/dev/null}"
+else
+  echo "::warning::HGDEPLOY_SSO_SECRET not set - this Builder can't sign in to HG SSO"
+  echo "sso=no" >> "${GITHUB_OUTPUT:-/dev/null}"
+fi
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 make_icns Resources/AppIcon-1024.png "$APP/Contents/Resources/AppIcon.icns"
 ditto "$PAYLOAD" "$APP/Contents/Resources/Payload"

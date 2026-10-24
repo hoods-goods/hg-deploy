@@ -2,18 +2,50 @@ import SwiftUI
 
 @main
 struct BuilderApp: App {
-    @StateObject private var model = AppModel()
+    @StateObject private var auth = Auth()
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         WindowGroup("HG Deploy Builder") {
-            ContentView()
-                .environmentObject(model)
+            RootView()
+                .environmentObject(auth)
+                .environmentObject(updater)
                 .frame(minWidth: 880, minHeight: 600)
+                .task { await updater.checkInBackgroundIfDue() }
+                .sheet(isPresented: $updater.showSheet) { UpdateView().environmentObject(updater) }
         }
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await updater.check(userInitiated: true) } }
+                if auth.user != nil {
+                    Button("Sign Out") { auth.signOut() }
+                }
+            }
         }
+    }
+}
+
+/// Sign-in gate: the Builder (and everything it starts) only exists once HG SSO says yes.
+struct RootView: View {
+    @EnvironmentObject var auth: Auth
+    var body: some View {
+        switch auth.state {
+        case .checking:
+            ProgressView("Checking your HG sign-in…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .signedOut:
+            SignInView()
+        case .signedIn:
+            SignedInView()
+        }
+    }
+}
+
+struct SignedInView: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        ContentView().environmentObject(model)
     }
 }
 
@@ -35,6 +67,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var auth: Auth
     @State private var section: SidebarItem? = .drive
 
     var body: some View {
@@ -59,6 +92,16 @@ struct ContentView: View {
             ToolbarItem {
                 Button { Task { await model.refreshDisks() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .help("Look for drives again")
+            }
+            ToolbarItem {
+                Menu {
+                    if let u = auth.user { Text("Signed in as \(u.name) (\(u.username))") }
+                    Button("Sign Out") { auth.signOut() }
+                        .disabled(model.job != nil)
+                } label: {
+                    Label(auth.user?.name ?? "Account", systemImage: "person.crop.circle")
+                }
+                .help("HG account")
             }
         }
         .alert("HG Deploy Builder", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {

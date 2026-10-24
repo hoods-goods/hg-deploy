@@ -24,6 +24,8 @@ jobs:
     # from forks never run here: they would execute a stranger's code on our Mac.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [ self-hosted, refurb-build ]
+    env:
+      HAS_RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN != '' && 'yes' || 'no' }}
     defaults:
       run:
         shell: bash   # -eo pipefail, so "| tee" doesn't hide failures
@@ -57,6 +59,9 @@ jobs:
       run: swift test 2>&1 | tee test.log
 
     - name: Build app
+      id: build
+      env:
+        HGDEPLOY_SSO_SECRET: ${{ secrets.HGDEPLOY_SSO_SECRET }}
       run: |
         chmod +x ci/*.sh
         ci/build-app.sh "${{ steps.version.outputs.VERSION }}" "${{ github.run_number }}" 2>&1 | tee build.log
@@ -126,20 +131,32 @@ jobs:
         retention-days: 5
         if-no-files-found: ignore
 
-    - name: Refuse unsigned releases
-      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed != 'yes'
+    - name: Refuse incomplete releases
+      if: steps.version.outputs.RELEASE == 'yes' && (steps.sign.outputs.pkg_signed != 'yes' || steps.build.outputs.sso != 'yes' || env.HAS_RELEASES_TOKEN != 'yes')
       run: |
-        echo "::error::Release builds must be signed: copy the Developer ID secrets into this repo, then re-run this job."
+        [ "${{ steps.sign.outputs.pkg_signed }}" = yes ] || echo "::error::Release builds must be signed: add the Developer ID secrets to this repo."
+        [ "${{ steps.build.outputs.sso }}" = yes ] || echo "::error::Release builds need HG SSO: add the HGDEPLOY_SSO_SECRET secret (the hgdeploy app secret from HG SSO)."
+        [ "$HAS_RELEASES_TOKEN" = yes ] || echo "::error::Add the RELEASES_TOKEN secret (fine-grained token, hoods-goods/hg-deploy-releases, Contents: Read and write)."
         exit 1
 
+    # The code repo is private; installers are published to the public
+    # hoods-goods/hg-deploy-releases repo, which the in-app updater reads.
     - name: Release
-      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed == 'yes'
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed == 'yes' && steps.build.outputs.sso == 'yes'
       uses: softprops/action-gh-release@v2
       with:
+        repository: hoods-goods/hg-deploy-releases
+        token: ${{ secrets.RELEASES_TOKEN }}
         tag_name: v${{ steps.version.outputs.VERSION }}
-        target_commitish: ${{ github.sha }}
-        name: HG Deploy ${{ steps.version.outputs.VERSION }}
+        name: HG Deploy Builder ${{ steps.version.outputs.VERSION }}
+        body: ${{ github.event.head_commit.message || format('HG Deploy Builder {0}', steps.version.outputs.VERSION) }}
         files: |
           build/HGDeployBuilder-*.pkg
-          build/HGDeployBuilder.zip
-        generate_release_notes: true
+
+    - name: Tag this repo
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed == 'yes' && steps.build.outputs.sso == 'yes'
+      run: |
+        V="${{ steps.version.outputs.VERSION }}"
+        if [ -z "$(git ls-remote --tags origin "refs/tags/v$V")" ]; then
+          git tag "v$V" "$GITHUB_SHA" && git push origin "v$V"
+        fi

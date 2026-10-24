@@ -89,30 +89,26 @@ final class BuilderKitTests: XCTestCase {
         XCTAssertEqual((json?["wifi"] as? [String: String])?["ssid"], "HG-Shop")
     }
 
-    func testInstallScript() {
-        let layout = DriveLayout(root: URL(fileURLWithPath: "/Volumes/HG Deploy"))
-        let p = CatalogInstaller(id: "072-11111", version: "15.7.1", build: "24G231", postDate: .distantPast,
-                                 distributionURL: URL(string: "https://example.com/072-11111.English.dist")!, packages: [])
-        let s = InstallerBuilder.installScript(
-            staged: [(p, URL(fileURLWithPath: "/Volumes/HG Deploy/.hgdeploy-staging/072-11111/072-11111.English.dist"),
-                      [URL(fileURLWithPath: "/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.6-24G84.app")])],
-            layout: layout)
-        XCTAssertTrue(s.contains("make_app '/Volumes/HG Deploy/.hgdeploy-staging/072-11111' 0"))
-        XCTAssertTrue(s.contains(#"installer -pkg "$st/InstallAssistant.pkg""#))
-        XCTAssertFalse(s.contains(".dist' -target"))
-        XCTAssertTrue(s.contains("'/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.7.1-24G231.app'"))
-        XCTAssertTrue(s.contains("rm -rf '/Volumes/HG Deploy/Installers/Install macOS Sequoia 15.6-24G84.app'"))
-        XCTAssertTrue(s.contains("INSTALLED 072-11111"))
-    }
+    func testFindInstallerAppAndInstallInfo() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("hgd-test-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        // Layout pkgutil --expand-full produces.
+        let app = tmp.appendingPathComponent("InstallAssistant.pkg/Payload/Applications/Install macOS Sequoia.app")
+        try fm.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: tmp.appendingPathComponent("Resources/en.lproj"), withIntermediateDirectories: true)
+        XCTAssertEqual(Assembler.findInstallerApp(in: tmp)?.lastPathComponent, "Install macOS Sequoia.app")
 
-    func testInstallScriptLegacy() {
-        let layout = DriveLayout(root: URL(fileURLWithPath: "/Volumes/r"))
-        let p = CatalogInstaller(id: "041-22222", version: "10.15.7", build: "19H15", postDate: .distantPast,
-                                 distributionURL: URL(string: "https://example.com/041-22222.English.dist")!, packages: [])
-        let s = InstallerBuilder.installScript(
-            staged: [(p, URL(fileURLWithPath: "/Volumes/r/.hgdeploy-staging/041-22222/041-22222.English.dist"), [])], layout: layout)
-        XCTAssertTrue(s.contains("make_app '/Volumes/r/.hgdeploy-staging/041-22222' 1"))
-        XCTAssertTrue(s.contains(#"cp "$st/InstallESDDmg.pkg" "$ss/InstallESD.dmg""#))
+        let ii = tmp.appendingPathComponent("InstallInfo.plist")
+        let d: NSDictionary = ["Payload Image Info": ["URL": "InstallESDDmg.pkg", "id": "com.apple.pkg.InstallESDDmg",
+                                                      "chunklistURL": "InstallESDDmg.chunklist", "chunklistid": "x"]]
+        d.write(to: ii, atomically: true)
+        Assembler.fixInstallInfo(ii)
+        let fixed = try XCTUnwrap(NSDictionary(contentsOf: ii)?["Payload Image Info"] as? [String: Any])
+        XCTAssertEqual(fixed["URL"] as? String, "InstallESD.dmg")
+        XCTAssertEqual(fixed["id"] as? String, "com.apple.dmg.InstallESD")
+        XCTAssertNil(fixed["chunklistURL"])
+        XCTAssertNil(fixed["chunklistid"])
     }
 
     func testShellQuote() {

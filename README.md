@@ -34,8 +34,10 @@ repo (the update must be signed by our Developer ID team and notarized).
 - **Drive**: erase an external SSD and set it up, or update HG Deploy on an existing drive.
 - **Installers**: download installers straight from Apple's software catalog
   (High Sierra → Tahoe), update old ones, import an `Install macOS….app` or
-  `InstallAssistant.pkg`, remove ones you don't need. Apple's `installer` runs
-  once per batch behind a single administrator prompt.
+  `InstallAssistant.pkg`, remove ones you don't need. Installers are built from Apple's packages
+  without an administrator prompt (`pkgutil --expand-full`; the Big Sur+
+  `InstallAssistant.pkg` becomes the app's `SharedSupport.dmg`) and checked by
+  mounting `SharedSupport.dmg` before they're added.
 - **Setup Defaults**: the account, computer name and SSH settings HG Deploy
   shows in Recovery (each can be changed per Mac there).
 

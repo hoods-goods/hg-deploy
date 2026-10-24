@@ -384,24 +384,29 @@ final class AppModel: ObservableObject {
         if Task.isCancelled { queue = [] }
         guard !staged.isEmpty else { job = nil; return }
 
-        let names = staged.map(\.product.title).joined(separator: ", ")
-        job = Job(title: "Building installers on the drive…", detail: names)
-        say("Running Apple's installer for: \(names)")
-        let script = InstallerBuilder.installScript(staged: staged, layout: layout)
-        let r = await Shell.runAsAdmin(script: script, prompt: "HG Deploy Builder needs to run Apple's installer to put macOS installers on the drive.")
-        for line in r.output.split(separator: "\n") where line.hasPrefix("==") || line.hasPrefix("INSTALLED") || line.contains("failed") || line.contains("Error") {
-            say(String(line))
-        }
-        if !r.ok { alert = "Some installers didn't finish:\n\(r.output.suffix(800))" }
-
-        // Record product IDs for what was installed.
+        // Build each installer as this user: no admin step reads the drive
+        // (macOS blocks that), so there's no password prompt either.
         var manifest = layout.loadManifest()
-        for (product, _, _) in staged where r.output.contains("INSTALLED \(product.id)") {
-            let name = InstallerInfo.driveName(major: product.major, version: product.version, build: product.build)
-            manifest.installers.removeAll { ($0.path as NSString).lastPathComponent == name }
-            manifest.installers.append(.init(path: "Installers/\(name)", version: product.version, build: product.build,
-                                             major: product.major, productID: product.id))
+        var failures: [String] = []
+        for (product, dist, replacing) in staged {
+            job = Job(title: "Building \(product.title) on the drive…")
+            say("Building \(product.title)")
+            do {
+                let final = try await Assembler.build(product: product, staging: dist.deletingLastPathComponent(), layout: layout,
+                                                      replacing: replacing) { detail in
+                    Task { @MainActor in self.job = Job(title: "Building \(product.title) on the drive…", detail: detail) }
+                }
+                manifest.installers.removeAll { ($0.path as NSString).lastPathComponent == final.lastPathComponent }
+                manifest.installers.append(.init(path: "Installers/\(final.lastPathComponent)", version: product.version,
+                                                 build: product.build, major: product.major, productID: product.id))
+                try? layout.save(manifest)
+                say("Added \(product.title)")
+            } catch {
+                say("\(product.title) failed: \(error.localizedDescription)")
+                failures.append("\(product.title): \(error.localizedDescription)")
+            }
         }
+        if !failures.isEmpty { alert = "Some installers didn't finish:\n" + failures.joined(separator: "\n") }
         try? layout.save(manifest)
         job = nil
         await refreshInstallers()
@@ -430,23 +435,16 @@ final class AppModel: ObservableObject {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
         if url.pathExtension == "pkg" {
-            job = Job(title: "Installing \(url.lastPathComponent) onto the drive…")
-            let q = Shell.quote
-            let script = """
-            DRIVE=\(q(layout.root.path))
-            mkdir -p "$DRIVE/Installers"
-            rm -rf "$DRIVE/Applications"/Install*.app
-            /usr/sbin/installer -pkg \(q(url.path)) -target "$DRIVE" || exit 1
-            app=$(ls -dt "$DRIVE/Applications"/Install*.app | head -1)
-            [ -n "$app" ] || exit 1
-            mv "$app" "$DRIVE/Installers/" && echo "MOVED $(basename "$app")"
-            rmdir "$DRIVE/Applications" 2>/dev/null
-            exit 0
-            """
-            let r = await Shell.runAsAdmin(script: script, prompt: "HG Deploy Builder needs to run Apple's installer.")
+            job = Job(title: "Building an installer from \(url.lastPathComponent)…")
+            do {
+                let final = try await Assembler.buildFromPackage(url, layout: layout) { detail in
+                    Task { @MainActor in self.job = Job(title: "Building an installer from \(url.lastPathComponent)…", detail: detail) }
+                }
+                say("Imported \(final.lastPathComponent)")
+            } catch {
+                alert = "Import failed: \(error.localizedDescription)"
+            }
             job = nil
-            if !r.ok { alert = "Import failed:\n\(r.output.suffix(600))" }
-            await renameImported(layout: layout)
             await refreshInstallers()
             return
         }
@@ -484,18 +482,6 @@ final class AppModel: ObservableObject {
             alert = "Copy failed: \(r.output)"
         }
         await refreshInstallers()
-    }
-
-    /// Gives an installer that came in with Apple's generic name its versioned drive name.
-    private func renameImported(layout: DriveLayout) async {
-        let items = (try? FileManager.default.contentsOfDirectory(at: layout.installersDir, includingPropertiesForKeys: nil)) ?? []
-        for item in items where item.pathExtension == "app" {
-            guard let info = await InstallerInfo.read(item) else { continue }
-            let name = InstallerInfo.driveName(major: info.major, version: info.version, build: info.build)
-            if name != item.lastPathComponent, !FileManager.default.fileExists(atPath: layout.installersDir.appendingPathComponent(name).path) {
-                try? FileManager.default.moveItem(at: item, to: layout.installersDir.appendingPathComponent(name))
-            }
-        }
     }
 
     nonisolated static func size(of url: URL) -> Int64 {

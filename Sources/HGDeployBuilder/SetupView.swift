@@ -27,6 +27,13 @@ struct SetupView: View {
             } header: { Text("Account") }
 
             Section {
+                TextField("Network name", text: binding(\.wifi.ssid), prompt: Text("Leave blank to skip"))
+                SecureField("Password", text: binding(\.wifi.password))
+                Text("HG Deploy joins this network when it opens in Recovery, so it can set the clock. Installing doesn't need a network, and the installed Mac isn't connected to it. The password is stored in plain text on the drive.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: { Text("Wi-Fi in Recovery") }
+
+            Section {
                 TextField("Computer name", text: binding(\.computerName), prompt: Text("Leave blank for the default"))
                 Text("{serial} and {model} are filled in, e.g. HG-{serial}").font(.caption).foregroundStyle(.secondary)
                 Toggle("Turn on Remote Login (SSH)", isOn: binding(\.enableSSH))

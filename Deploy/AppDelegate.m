@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 #import "HGShell.h"
 #import "HGSystem.h"
+#import "HGWiFi.h"
 
 static NSString *const kNVRAMKey = @"com.hgcellular.deploy";
 
@@ -72,6 +73,7 @@ static NSString *HGB64(NSString *s) {
 
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSTextField *clockValue;
+@property (nonatomic, strong) NSTextField *networkValue;
 @property (nonatomic, strong) NSPopUpButton *osPopup;
 @property (nonatomic, strong) NSButton *allowUnsupported;
 @property (nonatomic, strong) NSTextField *osNote;
@@ -132,7 +134,7 @@ static NSString *HGB64(NSString *s) {
     [self reloadDisks];
     [self applyConfig];
     [self updateClock];
-    [self syncClockInBackground];
+    [self connectNetworkInBackground];
 
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
@@ -197,8 +199,9 @@ static NSString *HGB64(NSString *s) {
     NSArray *rows = @[@[@"Model:", m.displayName, @"Identifier:", m.modelIdentifier],
                       @[@"Serial:", m.serial, @"Memory:", mem],
                       @[@"Processor:", m.cpu, @"Recovery:", [NSString stringWithFormat:@"macOS %@", m.recoveryVersion]],
-                      @[@"Newest macOS:", newest, @"Clock:", @""]];
-    CGFloat y = 74;
+                      @[@"Newest macOS:", newest, @"Clock:", @""],
+                      @[@"Network:", @"Checking…", @"", @""]];
+    CGFloat y = 70;
     for (NSArray *row in rows) {
         NSTextField *l1 = HGLabel(row[0], NSMakeRect(20, y, 100, 18), 12, NO);
         l1.textColor = [NSColor secondaryLabelColor];
@@ -215,11 +218,22 @@ static NSString *HGB64(NSString *s) {
         [v addSubview:v2];
         if ([row[2] isEqualToString:@"Clock:"]) {
             self.clockValue = v2;
-            NSButton *set = HGPushButton(@"Set…", NSMakeRect(700, y - 6, 80, 28), self, @selector(setClock:));
+            NSButton *set = HGPushButton(@"Set…", NSMakeRect(704, y - 2, 76, 22), self, @selector(setClock:));
+            [set.cell setControlSize:NSControlSizeSmall];
+            set.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
             [v addSubview:set];
             [self.lockableControls addObject:set];
         }
-        y += 22;
+        if ([row[0] isEqualToString:@"Network:"]) {
+            v1.frame = NSMakeRect(120, y, 560, 18);
+            self.networkValue = v1;
+            NSButton *join = HGPushButton(@"Wi-Fi…", NSMakeRect(704, y - 2, 76, 22), self, @selector(joinWiFiClicked:));
+            [join.cell setControlSize:NSControlSizeSmall];
+            join.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            [v addSubview:join];
+            [self.lockableControls addObject:join];
+        }
+        y += 19;
     }
 
     [v addSubview:HGSeparator(168, W)];
@@ -521,21 +535,97 @@ static NSString *HGB64(NSString *s) {
     return NO;
 }
 
-- (void)syncClockInBackground {
+- (void)updateNetworkLabel {
+    NSString *ip = [HGWiFi ipAddress];
+    NSString *ssid = [HGWiFi currentNetwork];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (ip && ssid) self.networkValue.stringValue = [NSString stringWithFormat:@"Wi-Fi “%@” · %@", ssid, ip];
+        else if (ip) self.networkValue.stringValue = [NSString stringWithFormat:@"Connected · %@", ip];
+        else self.networkValue.stringValue = @"Not connected (not needed to install)";
+        self.networkValue.textColor = ip ? [NSColor labelColor] : [NSColor secondaryLabelColor];
+    });
+}
+
+- (void)syncClock {
+    int status = -1;
+    NSString *out = nil;
+    if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/bin/sntp"]) {
+        out = [HGShell run:@"/usr/bin/sntp" args:@[@"-sS", @"time.apple.com"] status:&status];
+    } else if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/sbin/ntpdate"]) {
+        out = [HGShell run:@"/usr/sbin/ntpdate" args:@[@"-u", @"time.apple.com"] status:&status];
+    }
+    [self log:status == 0 ? @"Clock synced with time.apple.com" : [NSString stringWithFormat:@"Clock sync failed: %@", out ?: @"no sntp"]];
+    dispatch_async(dispatch_get_main_queue(), ^{ [self updateClock]; });
+}
+
+/// Joins `ssid` (if not already online), waits for an address, then syncs the clock.
+- (void)joinWiFi:(NSString *)ssid password:(NSString *)password {
+    if (ssid.length && ![self networkUp]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.networkValue.stringValue = [NSString stringWithFormat:@"Joining “%@”…", ssid];
+        });
+        [self log:[NSString stringWithFormat:@"Joining Wi-Fi “%@”", ssid]];
+        NSString *err = [HGWiFi joinNetwork:ssid password:password];
+        if (err) {
+            [self log:[@"Wi-Fi: " stringByAppendingString:err]];
+        } else {
+            for (int i = 0; i < 20 && ![self networkUp]; i++) [NSThread sleepForTimeInterval:1.0];
+            [self log:[self networkUp] ? [NSString stringWithFormat:@"Joined “%@” (%@)", ssid, [HGWiFi ipAddress] ?: @"no address yet"]
+                                       : @"Joined Wi-Fi but got no address."];
+        }
+    }
+    [self updateNetworkLabel];
+    if ([self networkUp]) [self syncClock];
+    else [self log:@"No network: clock not synced (use Set… if it's wrong)."];
+}
+
+- (void)connectNetworkInBackground {
+    NSDictionary *wifi = [self.config[@"wifi"] isKindOfClass:[NSDictionary class]] ? self.config[@"wifi"] : nil;
+    NSString *ssid = wifi[@"ssid"];
+    NSString *password = wifi[@"password"];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        if (![self networkUp]) {
-            [self log:@"No network: clock not synced (set it with Set… if it's wrong)."];
-            return;
+        [self joinWiFi:ssid password:password];
+    });
+}
+
+/// The Wi-Fi… button: join the drive's network or another one.
+- (void)joinWiFiClicked:(id)sender {
+    NSDictionary *wifi = [self.config[@"wifi"] isKindOfClass:[NSDictionary class]] ? self.config[@"wifi"] : nil;
+    NSAlert *a = [[NSAlert alloc] init];
+    a.messageText = @"Join a Wi-Fi network";
+    a.informativeText = @"Only used in Recovery, to set the clock. Installing doesn't need a network.";
+    NSView *box = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 54)];
+    NSTextField *ssidField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 30, 260, 22)];
+    [ssidField.cell setPlaceholderString:@"Network name"];
+    ssidField.stringValue = wifi[@"ssid"] ?: @"";
+    NSSecureTextField *pwField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(0, 0, 260, 22)];
+    [pwField.cell setPlaceholderString:@"Password"];
+    pwField.stringValue = wifi[@"password"] ?: @"";
+    [box addSubview:ssidField];
+    [box addSubview:pwField];
+    a.accessoryView = box;
+    [a addButtonWithTitle:@"Join"];
+    [a addButtonWithTitle:@"Cancel"];
+    [a.window setInitialFirstResponder:ssidField];
+    if ([a runModal] != NSAlertFirstButtonReturn) return;
+    NSString *ssid = [ssidField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSString *pw = pwField.stringValue;
+    if (!ssid.length) return;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // Join even if another network is up: the tech asked for this one.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.networkValue.stringValue = [NSString stringWithFormat:@"Joining “%@”…", ssid];
+        });
+        NSString *err = [HGWiFi joinNetwork:ssid password:pw];
+        if (err) {
+            [self log:[@"Wi-Fi: " stringByAppendingString:err]];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self alert:@"Couldn't join the Wi-Fi network." info:err]; });
+        } else {
+            for (int i = 0; i < 20 && ![self networkUp]; i++) [NSThread sleepForTimeInterval:1.0];
+            [self log:[NSString stringWithFormat:@"Joined “%@”", ssid]];
         }
-        int status = -1;
-        NSString *out = nil;
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/bin/sntp"]) {
-            out = [HGShell run:@"/usr/bin/sntp" args:@[@"-sS", @"time.apple.com"] status:&status];
-        } else if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/sbin/ntpdate"]) {
-            out = [HGShell run:@"/usr/sbin/ntpdate" args:@[@"-u", @"time.apple.com"] status:&status];
-        }
-        [self log:status == 0 ? @"Clock synced with time.apple.com" : [NSString stringWithFormat:@"Clock sync failed: %@", out ?: @"no sntp"]];
-        dispatch_async(dispatch_get_main_queue(), ^{ [self updateClock]; });
+        [self updateNetworkLabel];
+        if ([self networkUp]) [self syncClock];
     });
 }
 

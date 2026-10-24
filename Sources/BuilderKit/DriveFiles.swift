@@ -12,7 +12,14 @@ public struct DeployConfig: Codable, Equatable, Sendable {
         public var autoLogin = false
         public init() {}
     }
+    /// Wi-Fi HG Deploy joins when it opens in Recovery (to set the clock).
+    public struct WiFi: Codable, Equatable, Sendable {
+        public var ssid = ""
+        public var password = ""
+        public init() {}
+    }
     public var account = Account()
+    public var wifi = WiFi()
     public var computerName = ""
     public var enableSSH = false
     public var eraseByDefault = true
@@ -23,10 +30,19 @@ public struct DeployConfig: Codable, Equatable, Sendable {
         // Tolerate missing keys so older/newer drives still load.
         let c = try decoder.container(keyedBy: CodingKeys.self)
         account = (try? c.decode(Account.self, forKey: .account)) ?? Account()
+        wifi = (try? c.decode(WiFi.self, forKey: .wifi)) ?? WiFi()
         computerName = (try? c.decode(String.self, forKey: .computerName)) ?? ""
         enableSSH = (try? c.decode(Bool.self, forKey: .enableSSH)) ?? false
         eraseByDefault = (try? c.decode(Bool.self, forKey: .eraseByDefault)) ?? true
         volumeName = (try? c.decode(String.self, forKey: .volumeName)) ?? "Macintosh HD"
+    }
+}
+
+extension DeployConfig.WiFi {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ssid = (try? c.decode(String.self, forKey: .ssid)) ?? ""
+        password = (try? c.decode(String.self, forKey: .password)) ?? ""
     }
 }
 

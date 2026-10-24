@@ -81,6 +81,12 @@ final class BuilderKitTests: XCTestCase {
         XCTAssertTrue(partial.account.create)
         XCTAssertTrue(partial.account.admin)
         XCTAssertEqual(partial.volumeName, "Macintosh HD")
+        XCTAssertEqual(partial.wifi.ssid, "")
+        let withWiFi = try JSONDecoder().decode(DeployConfig.self, from: Data(#"{"wifi":{"ssid":"HG-Shop","password":"pw"}}"#.utf8))
+        XCTAssertEqual(withWiFi.wifi.ssid, "HG-Shop")
+        // The Recovery app reads config["wifi"]["ssid"] / ["password"].
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(withWiFi)) as? [String: Any]
+        XCTAssertEqual((json?["wifi"] as? [String: String])?["ssid"], "HG-Shop")
     }
 
     func testInstallScript() {

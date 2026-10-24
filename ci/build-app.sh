@@ -32,8 +32,8 @@ mkdir -p "$PAYLOAD"
 DEPLOY="$PAYLOAD/HG Deploy.app"
 mkdir -p "$DEPLOY/Contents/MacOS" "$DEPLOY/Contents/Resources"
 xcrun clang -arch x86_64 -mmacosx-version-min=10.11 -fobjc-arc -O2 -Wall -Wno-deprecated-declarations \
-  -framework Cocoa -framework IOKit \
-  Deploy/main.m Deploy/AppDelegate.m Deploy/HGSystem.m Deploy/HGShell.m \
+  -framework Cocoa -framework IOKit -weak_framework CoreWLAN \
+  Deploy/main.m Deploy/AppDelegate.m Deploy/HGSystem.m Deploy/HGShell.m Deploy/HGWiFi.m \
   -o "$DEPLOY/Contents/MacOS/HG Deploy"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Deploy/Info.plist > "$DEPLOY/Contents/Info.plist"
 printf 'APPL????' > "$DEPLOY/Contents/PkgInfo"

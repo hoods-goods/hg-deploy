@@ -16,11 +16,32 @@ cleanup() {
     /bin/rm -rf /Library/HGDeploy
 }
 
-raw=$(/usr/sbin/nvram "$NV" 2>/dev/null | /usr/bin/sed -E "s/^${NV}[[:space:]]+//")
+SKIPPED_MARKER=/Library/HGDeploy/.skipped-setup-assistant
+
+# If Setup Assistant was skipped for an account but no account got made, bring
+# Setup Assistant back so the Mac is never left at a login nobody can use.
+undo_skip_if_no_account() {
+    [ -f "$SKIPPED_MARKER" ] || return 0
+    local users
+    users=$(/usr/bin/dscl . -list /Users UniqueID 2>/dev/null | /usr/bin/awk '$2 >= 501 && $2 < 60000 {print $1}')
+    if [ -z "$users" ]; then
+        echo "No account was created: removing .AppleSetupDone so Setup Assistant runs."
+        /bin/rm -f /private/var/db/.AppleSetupDone
+        NEED_RESTART=1
+    fi
+}
+
+# Settings saved by the package (survive NVRAM resets), else NVRAM.
+raw=""
+[ -s /Library/HGDeploy/settings ] && raw=$(/bin/cat /Library/HGDeploy/settings)
+[ -z "$raw" ] && raw=$(/usr/sbin/nvram "$NV" 2>/dev/null | /usr/bin/sed -E "s/^${NV}[[:space:]]+//")
 /usr/sbin/nvram -d "$NV" 2>/dev/null
 if [ -z "$raw" ]; then
-    echo "No settings in NVRAM; nothing to do."
+    echo "No settings found (file or NVRAM); nothing to do."
+    NEED_RESTART=0
+    undo_skip_if_no_account
     cleanup
+    [ "$NEED_RESTART" = 1 ] && /sbin/shutdown -r now
     exit 0
 fi
 cfg=$(printf '%s' "$raw" | /usr/bin/base64 -D 2>/dev/null)
@@ -146,8 +167,11 @@ if [ "$(val SSH)" = 1 ]; then
     echo "Remote Login turned on"
 fi
 
+undo_skip_if_no_account
+
 cfg=""
 PW=""
+raw=""
 cleanup
 echo "HG Deploy first boot finished."
 if [ "$NEED_RESTART" = 1 ]; then

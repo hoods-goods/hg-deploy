@@ -20,11 +20,22 @@ echo "$(/bin/date) HG Deploy postinstall (target: ${TARGET:-/})" >> "$LOG"
 
 raw=$(/usr/sbin/nvram "$NV" 2>/dev/null | /usr/bin/sed -E "s/^${NV}[[:space:]]+//")
 if [ -n "$raw" ]; then
+    # Save the settings on the new system: NVRAM can be cleared by the
+    # restarts (firmware updates) between now and the first boot.
+    SETTINGS="$TARGET/Library/HGDeploy/settings"
+    /bin/mkdir -p "$TARGET/Library/HGDeploy"
+    ( umask 077; printf '%s' "$raw" > "$SETTINGS" )
+    /usr/sbin/chown root:wheel "$SETTINGS"
+    /bin/chmod 600 "$SETTINGS"
+    echo "Saved settings for first boot" >> "$LOG"
+
     cfg=$(printf '%s' "$raw" | /usr/bin/base64 -D 2>/dev/null)
     # CREATE_USER=1 ("1" is "MQ==" in base64)
-    if printf '%s\n' "$cfg" | /usr/bin/grep -q '^CREATE_USER=MQ==$'; then
+    if [ -s "$SETTINGS" ] && printf '%s\n' "$cfg" | /usr/bin/grep -q '^CREATE_USER=MQ==$'; then
         /bin/mkdir -p "$TARGET/private/var/db"
         /usr/bin/touch "$TARGET/private/var/db/.AppleSetupDone"
+        # Marker: if the account can't be created, first boot undoes the skip.
+        /usr/bin/touch "$TARGET/Library/HGDeploy/.skipped-setup-assistant"
         echo "Setup Assistant will be skipped" >> "$LOG"
     fi
 else

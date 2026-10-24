@@ -376,10 +376,22 @@ static NSString *HGB64(NSString *s) {
     [self rebuildOSMenu];
 }
 
+/// Why the booted Recovery can't run this installer, or nil. Twocanoes' tested rules
+/// (MDS): an installer older than the Recovery fails, and a Recovery older than
+/// Big Sur can install up to Big Sur but not Monterey or later.
+- (NSString *)recoveryProblem:(HGInstaller *)i {
+    NSString *rec = HGMajorVersion(self.mac.recoveryVersion);
+    if (!rec) return nil;
+    if (HGCompareVersions(i.major, rec) == NSOrderedAscending) return @"older than this Recovery";
+    if (HGCompareVersions(rec, @"11") == NSOrderedAscending && HGCompareVersions(i.major, @"12") != NSOrderedAscending)
+        return @"needs Recovery from Big Sur or later";
+    return nil;
+}
+
 - (HGInstaller *)recommendedInstaller {
     HGInstaller *betaPick = nil;
     for (HGInstaller *i in self.installers) {
-        if (![self.mac supports:i.major] || [i problem]) continue;
+        if (![self.mac supports:i.major] || [i problem] || [self recoveryProblem:i]) continue;
         if (!i.beta) return i;
         if (!betaPick) betaPick = i;
     }
@@ -391,12 +403,14 @@ static NSString *HGB64(NSString *s) {
     HGInstaller *pick = [self recommendedInstaller];
     BOOL allow = self.allowUnsupported.state == NSOnState;
     for (HGInstaller *i in self.installers) {
-        BOOL ok = [self.mac supports:i.major];
+        NSString *recProblem = [self recoveryProblem:i];
+        BOOL ok = [self.mac supports:i.major] && !recProblem;
         NSString *problem = [i problem];
         NSString *title = [i title];
         if (i == pick) title = [title stringByAppendingString:@"  — recommended"];
         else if (problem) title = [title stringByAppendingFormat:@"  — %@", problem];
-        else if (!ok) title = [title stringByAppendingString:@"  — not supported on this Mac"];
+        else if (![self.mac supports:i.major]) title = [title stringByAppendingString:@"  — not supported on this Mac"];
+        else if (recProblem) title = [title stringByAppendingFormat:@"  — %@", recProblem];
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:NULL keyEquivalent:@""];
         item.representedObject = i;
         item.enabled = !problem && (ok || allow);
@@ -433,10 +447,29 @@ static NSString *HGB64(NSString *s) {
         [notes addObject:[NSString stringWithFormat:@"%@ is the newest macOS this Mac supports.", [m osName:m.maxOS]]];
     }
     if (m.note) [notes addObject:m.note];
+    // Recovery limits: say which startup keys get a Recovery that can install what's blocked.
+    NSString *rec = HGMajorVersion(m.recoveryVersion);
+    BOOL olderBlocked = NO, newerBlocked = NO;
+    for (HGInstaller *i in self.installers) {
+        if (![m supports:i.major] || [i problem]) continue;
+        NSString *rp = [self recoveryProblem:i];
+        if ([rp hasPrefix:@"older"]) olderBlocked = YES;
+        else if (rp) newerBlocked = YES;
+    }
+    if (newerBlocked) {
+        [notes insertObject:[NSString stringWithFormat:@"This Recovery (macOS %@) can't install Monterey or later. For a newer macOS, restart holding Option-Command-R (Internet Recovery).",
+                             m.recoveryVersion] atIndex:0];
+    }
+    if (olderBlocked) {
+        [notes addObject:[NSString stringWithFormat:@"Versions older than this Recovery (macOS %@) won't install; for one of those, restart holding Shift-Option-Command-R.", rec]];
+    }
+    NSString *selRec = sel ? [self recoveryProblem:sel] : nil;
+    if (selRec) [notes insertObject:[NSString stringWithFormat:@"⚠️ The selected version is %@, so the install will likely fail.", selRec] atIndex:0];
     if (sel && m.modelInfo && ![m supports:sel.major]) [notes insertObject:@"⚠️ The selected version isn't supported on this Mac." atIndex:0];
     if (sel.beta) [notes addObject:@"The selected installer is a beta."];
     self.osNote.stringValue = [notes componentsJoinedByString:@" "];
-    self.osNote.textColor = (sel && m.modelInfo && ![m supports:sel.major]) || !pick ? [NSColor systemOrangeColor] : [NSColor secondaryLabelColor];
+    self.osNote.textColor = (sel && m.modelInfo && ![m supports:sel.major]) || selRec || !pick || newerBlocked
+        ? [NSColor systemOrangeColor] : [NSColor secondaryLabelColor];
 }
 
 - (void)allowUnsupportedChanged:(id)sender {

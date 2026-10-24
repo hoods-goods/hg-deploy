@@ -13,6 +13,13 @@ recognizes the Mac, and erases and installs the newest macOS it supports.
    already selected. Pick the disk, optionally an account, and click
    **Erase & Install**. The Mac restarts by itself and finishes installing.
 
+**Which Recovery.** Rules from Twocanoes' MDS testing, enforced by HG Deploy:
+an installer **older than the booted Recovery fails**, and a **Recovery older than
+Big Sur can't install Monterey or later**. HG Deploy only recommends installers the
+booted Recovery can run, marks the others, and says which keys to restart with:
+⌥⌘R (Internet Recovery, newest macOS the Mac supports) or ⇧⌥⌘R (closest to what
+the Mac shipped with, for older versions).
+
 Logs are written to the drive in `HGDeploy/Logs/<serial>_<date>.log`.
 
 ## Building drives — HG Deploy Builder

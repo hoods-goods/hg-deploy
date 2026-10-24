@@ -101,6 +101,8 @@ struct DriveView: View {
                         } label: { Image(systemName: "doc.on.doc") }
                         .buttonStyle(.borderless).help("Copy")
                     }
+                    Text("Which Recovery: ⌥⌘R (Internet Recovery) gives the newest macOS the Mac supports, which is usually what you want. To install an older version than the Mac's Recovery, use ⇧⌥⌘R; an installer older than the Recovery won't install.")
+                        .font(.caption).foregroundStyle(.secondary)
                     if layout.root.lastPathComponent.count > 3 {
                         Text("Tip: rename the drive to “r” (Rename… above) and the command is just /Volumes/r/run.")
                             .font(.caption).foregroundStyle(.secondary)

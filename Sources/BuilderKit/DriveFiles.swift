@@ -171,6 +171,12 @@ public struct DriveLayout: Sendable {
           2. Open Utilities > Terminal.
           3. Type:  /Volumes/\(volumeName)/run   and press Return.
 
+        Which Recovery to use:
+          Option-Command-R        newest macOS the Mac supports (usual choice)
+          Shift-Option-Command-R  to install an older macOS than the Mac had;
+                                  an installer older than the Recovery fails
+        A Recovery older than Big Sur can't install Monterey or later.
+
         HG Deploy shows the Mac's model and the newest macOS it supports, then
         erases the internal disk and installs. Logs are saved in HGDeploy/Logs.
 

@@ -61,6 +61,16 @@ jobs:
         chmod +x ci/*.sh
         ci/build-app.sh "${{ steps.version.outputs.VERSION }}" "${{ github.run_number }}" 2>&1 | tee build.log
 
+    - name: Build notes
+      if: success()
+      run: |
+        # Compiler warnings and the Recovery app's deployment target, as
+        # annotations (readable through the API without downloading logs).
+        grep -E "warning:" build.log | grep -E "Deploy/|Sources/" | sed -E 's#^/.*/(Deploy|Sources)/#\1/#' \
+          | sort -u | head -20 | while IFS= read -r l; do echo "::warning::${l:0:300}"; done
+        echo "::notice::$(grep -E "Architectures|Non-fat" build.log | head -1)"
+        echo "::notice::Deploy min OS: $(grep -A3 -E 'LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION' build.log | grep -E 'version|minos' | head -2 | tr -s ' ' | tr '\n' ' ')"
+
     - name: Build errors
       if: failure()
       run: |

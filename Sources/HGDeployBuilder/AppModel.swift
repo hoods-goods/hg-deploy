@@ -201,6 +201,23 @@ final class AppModel: ObservableObject {
         await refreshDisks()
     }
 
+    /// Renames the drive's volume (no erase) and refreshes the READ ME with the new command.
+    func renameDrive(to name: String) async {
+        guard let vol = volume, let mp = vol.mountPoint else { return }
+        guard name != vol.name else { return }
+        job = Job(title: "Renaming \(vol.name) to \(name)…")
+        let r = await Shell.run("/usr/sbin/diskutil", ["rename", mp, name])
+        say(r.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        job = nil
+        guard r.ok else { alert = "Renaming failed:\n\(r.output)"; return }
+        await refreshDisks()
+        if let layout, layout.isDeployDrive {
+            try? DriveLayout.readmeContents(volumeName: layout.root.lastPathComponent)
+                .write(to: layout.readme, atomically: true, encoding: .utf8)
+            say("In Recovery run: \(layout.command)")
+        }
+    }
+
     func showInFinder() {
         guard let layout else { return }
         NSWorkspace.shared.activateFileViewerSelecting([layout.root])

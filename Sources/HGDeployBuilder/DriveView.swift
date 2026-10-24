@@ -3,7 +3,9 @@ import SwiftUI
 
 struct DriveView: View {
     @EnvironmentObject var model: AppModel
-    @State private var newName = "HGDeploy"
+    @State private var newName = "r"
+    @State private var renaming = false
+    @State private var renameTo = "r"
     @State private var confirmErase = false
 
     var body: some View {
@@ -29,6 +31,16 @@ struct DriveView: View {
             .padding(20)
             .frame(maxWidth: 760, alignment: .leading)
         }
+        .alert("Rename the drive", isPresented: $renaming) {
+            TextField("Name", text: $renameTo)
+            Button("Rename") {
+                let name = renameTo.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { Task { await model.renameDrive(to: name) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The Recovery command becomes /Volumes/<name>/run. Nothing on the drive is erased.")
+        }
     }
 
     @ViewBuilder
@@ -47,6 +59,9 @@ struct DriveView: View {
                             Task { await model.installTool() }
                         }
                         .disabled(model.job != nil || model.payload == nil)
+                        Button("Rename…") { renameTo = "r"; renaming = true }
+                            .disabled(model.job != nil)
+                            .help("A short name means a short command in Recovery")
                         Button("Show in Finder") { model.showInFinder() }
                     }
                 } else if let vol = model.volume {
@@ -86,6 +101,10 @@ struct DriveView: View {
                         } label: { Image(systemName: "doc.on.doc") }
                         .buttonStyle(.borderless).help("Copy")
                     }
+                    if layout.root.lastPathComponent.count > 3 {
+                        Text("Tip: rename the drive to “r” (Rename… above) and the command is just /Volumes/r/run.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Text("HG Deploy opens, picks the newest macOS the Mac supports, and erases and installs. Logs are saved on the drive in HGDeploy/Logs.")
                         .foregroundStyle(.secondary)
                 }
@@ -101,9 +120,9 @@ struct DriveView: View {
                 Text("Erases **\(disk.label)** and sets it up as an HG Deploy drive (Mac OS Extended, so every Recovery can read it). Then add installers on the Installers tab.")
                 HStack {
                     Text("Name:")
-                    TextField("HGDeploy", text: $newName).frame(width: 200)
+                    TextField("r", text: $newName).frame(width: 200)
                     if newName.contains(" ") {
-                        Text("A name without spaces is easier to type in Terminal.").font(.caption).foregroundStyle(.orange)
+                        Text("Use a short name without spaces: it is typed in Terminal.").font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Button("Erase & Build…", role: .destructive) { confirmErase = true }

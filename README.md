@@ -8,7 +8,7 @@ recognizes the Mac, and erases and installs the newest macOS it supports.
 
 1. Plug the drive into the Intel Mac and start it in Recovery (hold ⌘R, or ⌥⌘R
    for Internet Recovery).
-2. Open **Utilities ▸ Terminal** and type `/Volumes/HGDeploy/run`.
+2. Open **Utilities ▸ Terminal** and type `/Volumes/r/run` (new drives are named `r`; rename one on the Drive tab).
 3. HG Deploy opens with the Mac's model, serial and the newest macOS it can run,
    already selected. Pick the disk, optionally an account, and click
    **Erase & Install**. The Mac restarts by itself and finishes installing.
@@ -45,7 +45,7 @@ repo (the update must be signed by our Developer ID team and notarized).
 ### Drive layout
 
 ```
-/Volumes/HGDeploy/
+/Volumes/r/
   run                      launcher typed in Recovery
   READ ME.txt
   Installers/              Install macOS <name> <version>-<build>.app

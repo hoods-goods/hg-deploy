@@ -8,18 +8,19 @@ struct SetupView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Create an account and skip Setup Assistant", isOn: binding(\.account.create))
-                Text("Off: the Mac starts at the Setup Assistant (“Hello”) screen, ready for a customer.")
+                Text("Saved on the drive and filled in for you in Recovery. You choose there, per Mac, whether to set the account up.")
                     .font(.caption).foregroundStyle(.secondary)
-                Group {
-                    TextField("Full name", text: binding(\.account.fullName))
-                    TextField("Account name", text: binding(\.account.shortName))
-                    SecureField("Password", text: binding(\.account.password))
-                    Toggle("Administrator", isOn: binding(\.account.admin))
-                    Toggle("Log in automatically", isOn: binding(\.account.autoLogin))
-                }
-                .disabled(!model.config.account.create)
-                if model.config.account.create && !model.config.account.password.isEmpty {
+                TextField("Full name", text: binding(\.account.fullName))
+                TextField("Account name", text: binding(\.account.shortName))
+                SecureField("Password", text: binding(\.account.password))
+                Toggle("Administrator", isOn: binding(\.account.admin))
+                Toggle("Log in automatically", isOn: binding(\.account.autoLogin))
+                Toggle("Set up the account by default", isOn: binding(\.account.create))
+                Text(model.config.account.create
+                     ? "Recovery starts with account setup checked: the account is created and Setup Assistant is skipped. Uncheck it there for a Mac going to a customer."
+                     : "Recovery starts with account setup unchecked: the Mac ends at the Setup Assistant (“Hello”) screen. Check it there to create this account instead.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if !model.config.account.password.isEmpty {
                     Text("The password is stored in plain text on the drive (HGDeploy/config.json) and briefly in the Mac's NVRAM during the install.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

@@ -147,7 +147,15 @@ if [ "$(val CREATE_USER)" = 1 ]; then
     fi
     /usr/sbin/createhomedir -c -u "$SN" >/dev/null 2>&1
     HOME_DIR=$(/usr/bin/dscl . -read "/Users/$SN" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
-    [ -d "$HOME_DIR" ] && skip_setup_screens "$HOME_DIR" "$SN"
+    if [ -d "$HOME_DIR" ]; then
+        skip_setup_screens "$HOME_DIR" "$SN"
+        # The whole home folder must belong to the user, or macOS can't create
+        # the login keychain at first login ("keychain could not be created").
+        /usr/sbin/chown -R "$SN":staff "$HOME_DIR"
+        echo "Home folder $HOME_DIR owned by $SN"
+    else
+        echo "Home folder for $SN will be created at first login"
+    fi
     /usr/bin/touch /private/var/db/.AppleSetupDone
 
     if [ "$(val AUTOLOGIN)" = 1 ]; then

@@ -59,6 +59,7 @@ for _ in $(/usr/bin/seq 1 60); do
 done
 
 NEED_RESTART=0
+REFRESH_LOGIN=0
 
 # --- Computer name ---
 CN=$(val COMPUTERNAME)
@@ -151,7 +152,7 @@ if [ "$(val CREATE_USER)" = 1 ]; then
         skip_setup_screens "$HOME_DIR" "$SN"
         # The whole home folder must belong to the user, or macOS can't create
         # the login keychain at first login ("keychain could not be created").
-        /usr/sbin/chown -R "$SN":staff "$HOME_DIR"
+        /usr/sbin/chown -R "$SN":staff "$HOME_DIR" 2>/dev/null
         echo "Home folder $HOME_DIR owned by $SN"
     else
         echo "Home folder for $SN will be created at first login"
@@ -163,7 +164,7 @@ if [ "$(val CREATE_USER)" = 1 ]; then
         /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser -string "$SN"
         echo "Automatic login on for $SN"
     fi
-    NEED_RESTART=1
+    REFRESH_LOGIN=1
 fi
 
 # --- Remote Login ---
@@ -183,7 +184,19 @@ raw=""
 cleanup
 echo "HG Deploy first boot finished."
 if [ "$NEED_RESTART" = 1 ]; then
-    echo "Restarting so the login window picks up the new account."
+    # Only when no account could be made: bring Setup Assistant back.
+    echo "Restarting into Setup Assistant."
     /sbin/shutdown -r now
+elif [ "$REFRESH_LOGIN" = 1 ]; then
+    # Never restart under someone: a restart during the first login breaks the
+    # new account's keychain. Refresh the login window only if nobody's logged
+    # in (that also starts automatic login).
+    console=$(/usr/bin/stat -f %Su /dev/console 2>/dev/null)
+    if [ -z "$console" ] || [ "$console" = root ] || [ "$console" = _mbsetupuser ]; then
+        echo "Refreshing the login window to show the new account."
+        /usr/bin/killall loginwindow 2>/dev/null
+    else
+        echo "$console is already logged in; leaving the session alone."
+    fi
 fi
 exit 0

@@ -1,0 +1,33 @@
+#!/bin/bash
+# HG Deploy first-boot package — postinstall.
+# startosinstall installs this package with macOS ($3 = the new system).
+# It only fixes permissions and, when an account is being created, marks
+# Setup Assistant as done so the Mac doesn't stop at "Hello". The real work
+# happens in /Library/HGDeploy/firstboot.sh on the first boot.
+
+TARGET="${3:-/}"
+[ "$TARGET" = "/" ] && TARGET=""
+NV=com.hgcellular.deploy
+LOG="$TARGET/private/var/log/hgdeploy.log"
+
+/bin/mkdir -p "$TARGET/private/var/log"
+echo "$(/bin/date) HG Deploy postinstall (target: ${TARGET:-/})" >> "$LOG"
+
+/usr/sbin/chown root:wheel "$TARGET/Library/LaunchDaemons/com.hgcellular.deploy.firstboot.plist"
+/bin/chmod 644 "$TARGET/Library/LaunchDaemons/com.hgcellular.deploy.firstboot.plist"
+/usr/sbin/chown -R root:wheel "$TARGET/Library/HGDeploy"
+/bin/chmod 755 "$TARGET/Library/HGDeploy/firstboot.sh"
+
+raw=$(/usr/sbin/nvram "$NV" 2>/dev/null | /usr/bin/sed -E "s/^${NV}[[:space:]]+//")
+if [ -n "$raw" ]; then
+    cfg=$(printf '%s' "$raw" | /usr/bin/base64 -D 2>/dev/null)
+    # CREATE_USER=1 ("1" is "MQ==" in base64)
+    if printf '%s\n' "$cfg" | /usr/bin/grep -q '^CREATE_USER=MQ==$'; then
+        /bin/mkdir -p "$TARGET/private/var/db"
+        /usr/bin/touch "$TARGET/private/var/db/.AppleSetupDone"
+        echo "Setup Assistant will be skipped" >> "$LOG"
+    fi
+else
+    echo "No HG Deploy settings in NVRAM" >> "$LOG"
+fi
+exit 0

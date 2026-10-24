@@ -1,0 +1,133 @@
+name: Build HG Deploy
+
+# Every push and PR: run the parser tests and build the app.
+# main and tags: also sign + notarize (when the Developer ID secrets are set)
+# and upload the Builder .pkg/.zip. Tags like v1.2.0 also publish a GitHub release.
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+    paths-ignore: [ '**.md' ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # The hoods-goods Mac mini (org-level self-hosted runner). Pull requests
+    # from forks never run here: they would execute a stranger's code on our Mac.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [ self-hosted, refurb-build ]
+    defaults:
+      run:
+        shell: bash   # -eo pipefail, so "| tee" doesn't hide failures
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Version
+      id: version
+      run: |
+        # The version lives in the VERSION file. A push to main that changes
+        # it to a version with no release yet builds, signs and publishes
+        # release v<VERSION> (tagging that commit). Pushing a v* tag works too.
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          V="${GITHUB_REF#refs/tags/v}"
+        else
+          V=$(tr -d '[:space:]' < VERSION)
+        fi
+        RELEASE=no
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          RELEASE=yes
+        elif [ "$GITHUB_REF" = refs/heads/main ] && [ "${{ github.event_name }}" = push ] \
+             && [ -z "$(git ls-remote --tags origin "refs/tags/v$V")" ]; then
+          RELEASE=yes
+        fi
+        echo "VERSION=$V" >> "$GITHUB_OUTPUT"
+        echo "RELEASE=$RELEASE" >> "$GITHUB_OUTPUT"
+        echo "Version $V (release: $RELEASE)"
+
+    - name: Test
+      run: swift test 2>&1 | tee test.log
+
+    - name: Build app
+      run: |
+        chmod +x ci/*.sh
+        ci/build-app.sh "${{ steps.version.outputs.VERSION }}" "${{ github.run_number }}" 2>&1 | tee build.log
+
+    - name: Build errors
+      if: failure()
+      run: |
+        # Errors as annotations (Actions logs aren't always reachable).
+        cat test.log build.log 2>/dev/null | grep -E "error:|failed" | sed -E 's#^/.*/Sources/#Sources/#; s#^/.*/Tests/#Tests/#; s#^/.*/Deploy/#Deploy/#' \
+          | sort -u | head -25 | while IFS= read -r l; do echo "::error::${l:0:300}"; done
+
+    - name: Sign
+      id: sign
+      if: github.event_name != 'pull_request'
+      env:
+        MAC_CERTS_P12: ${{ secrets.MAC_CERTS_P12 }}
+        MAC_CERTS_P12_2: ${{ secrets.MAC_CERTS_P12_2 }}
+        MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+      run: ci/sign.sh "build/HG Deploy Builder.app" "${{ steps.version.outputs.VERSION }}"
+
+    - name: Notarize
+      if: steps.sign.outputs.signed == 'yes' && steps.sign.outputs.pkg_signed == 'yes'
+      env:
+        NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+        NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+      run: |
+        if [ -z "$NOTARY_KEY_P8" ] || [ -z "$NOTARY_KEY_ID" ] || [ -z "$NOTARY_ISSUER_ID" ]; then
+          echo "::warning::Notary secrets not set - signed but not notarized"; exit 0
+        fi
+        ci/notarize.sh "${{ steps.sign.outputs.pkg }}"
+
+    - name: Remove signing keychain
+      if: always() && steps.sign.outputs.keychain != ''
+      run: security delete-keychain "${{ steps.sign.outputs.keychain }}" || true
+
+    - name: Upload app
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: HGDeployBuilder-${{ steps.version.outputs.VERSION }}
+        path: |
+          build/HGDeployBuilder.zip
+          build/HGDeployBuilder-*.pkg
+        retention-days: 30
+
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-${{ github.run_number }}
+        path: |
+          test.log
+          build.log
+        retention-days: 5
+        if-no-files-found: ignore
+
+    - name: Refuse unsigned releases
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed != 'yes'
+      run: |
+        echo "::error::Release builds must be signed: copy the Developer ID secrets into this repo, then re-run this job."
+        exit 1
+
+    - name: Release
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed == 'yes'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.version.outputs.VERSION }}
+        target_commitish: ${{ github.sha }}
+        name: HG Deploy ${{ steps.version.outputs.VERSION }}
+        files: |
+          build/HGDeployBuilder-*.pkg
+          build/HGDeployBuilder.zip
+        generate_release_notes: true

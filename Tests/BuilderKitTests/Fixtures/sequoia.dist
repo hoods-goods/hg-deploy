@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>SU_TITLE</title>
+    <auxinfo>
+        <dict>
+            <key>BUILD</key>
+            <string>24G231</string>
+            <key>VERSION</key>
+            <string>15.7.1</string>
+        </dict>
+    </auxinfo>
+    <pkg-ref id="com.apple.pkg.InstallAssistant.macOSSequoia" installKBytes="0" version="15.7.1.0.0">InstallAssistant.pkg</pkg-ref>
+</installer-gui-script>

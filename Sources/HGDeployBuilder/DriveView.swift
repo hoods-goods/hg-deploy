@@ -63,6 +63,8 @@ struct DriveView: View {
                             .disabled(model.job != nil)
                             .help("A short name means a short command in Recovery")
                         Button("Show in Finder") { model.showInFinder() }
+                        Button { Task { await model.eject() } } label: { Label("Eject", systemImage: "eject") }
+                            .disabled(model.isBusy)
                     }
                 } else if let vol = model.volume {
                     Label("Not an HG Deploy drive yet", systemImage: "externaldrive").font(.headline)

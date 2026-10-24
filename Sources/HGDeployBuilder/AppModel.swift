@@ -42,6 +42,8 @@ final class AppModel: ObservableObject {
     @Published var job: Job?
     @Published var log: [String] = []
     @Published var alert: String?
+    /// Set when a normal eject was refused; the UI offers Force Eject.
+    @Published var ejectRefused: String?
 
     let models: ModelTable?
     private var queueTask: Task<Void, Never>?
@@ -264,6 +266,34 @@ final class AppModel: ObservableObject {
             try? DriveLayout.readmeContents(volumeName: layout.root.lastPathComponent)
                 .write(to: layout.readme, atomically: true, encoding: .utf8)
             say("In Recovery run: \(layout.command)")
+        }
+    }
+
+    /// Unmounts and ejects the selected drive so it can be unplugged safely.
+    func eject(force: Bool = false) async {
+        guard let disk = selectedDisk else { return }
+        if isBusy {
+            alert = "Installers are downloading or being built on this drive. Cancel or let them finish before ejecting."
+            return
+        }
+        job = Job(title: force ? "Force-ejecting \(disk.mediaName)…" : "Ejecting \(disk.mediaName)…")
+        if force {
+            let u = await Shell.run("/usr/sbin/diskutil", ["unmountDisk", "force", disk.id])
+            say(u.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        let r = await Shell.run("/usr/sbin/diskutil", ["eject", disk.id])
+        say(r.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        job = nil
+        if r.ok {
+            say("\(disk.mediaName) ejected — safe to unplug")
+            ejectRefused = nil
+            selectedDiskID = nil
+            await refreshDisks()
+        } else if !force {
+            // diskutil names the process that's holding the drive ("dissented by PID …").
+            ejectRefused = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            alert = "The drive couldn't be ejected:\n\(r.output)"
         }
     }
 

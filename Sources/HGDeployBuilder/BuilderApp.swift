@@ -97,6 +97,11 @@ struct ContentView: View {
                     .help("Look for drives again")
             }
             ToolbarItem {
+                Button { Task { await model.eject() } } label: { Label("Eject", systemImage: "eject") }
+                    .help("Eject the drive so it can be unplugged")
+                    .disabled(model.selectedDisk == nil || model.isBusy)
+            }
+            ToolbarItem {
                 Menu {
                     if let u = auth.user { Text("Signed in as \(u.name) (\(u.username))") }
                     Button("Sign Out") { auth.signOut() }
@@ -106,6 +111,12 @@ struct ContentView: View {
                 }
                 .help("HG account")
             }
+        }
+        .alert("The drive is in use", isPresented: Binding(get: { model.ejectRefused != nil }, set: { if !$0 { model.ejectRefused = nil } })) {
+            Button("Force Eject", role: .destructive) { Task { await model.eject(force: true) } }
+            Button("Cancel", role: .cancel) { model.ejectRefused = nil }
+        } message: {
+            Text("macOS wouldn't eject it because something still has files open on it (often Finder or Spotlight).\n\n\(model.ejectRefused ?? "")\n\nForce Eject closes them. Don't unplug before it's ejected.")
         }
         .alert("HG Deploy Builder", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
             Button("OK") { model.alert = nil }
